@@ -1,0 +1,3 @@
+OK — write access works.
+Repo: nba-predictor-app
+Date: 2026-08-14
