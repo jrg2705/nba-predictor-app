@@ -116,8 +116,11 @@ export default function NBAPredictor() {
 
   useEffect(() => {
     const el = document.getElementById("initial-splash");
-    if (el) el.remove();
-    const t = setTimeout(() => setShowSplash(false), 1600);
+    if (el) {
+      el.classList.add("hide");
+      setTimeout(() => el.remove(), 400);
+    }
+    const t = setTimeout(() => setShowSplash(false), 1200);
     return () => clearTimeout(t);
   }, []);
 
