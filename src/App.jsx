@@ -95,7 +95,6 @@ const HoopLoader = () => (
 );
 
 export default function NBAPredictor() {
-  const [showSplash, setShowSplash] = useState(true);
   const [tab, setTab] = useState("predictor");
   const [home, setHome] = useState("");
   const [away, setAway] = useState("");
@@ -121,10 +120,8 @@ export default function NBAPredictor() {
     const el = document.getElementById("initial-splash");
     if (el) {
       el.classList.add("hide");
-      setTimeout(() => el.remove(), 400);
+      setTimeout(() => { try { el.remove(); } catch (_) {} }, 400);
     }
-    const t = setTimeout(() => setShowSplash(false), 1200);
-    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -302,29 +299,7 @@ export default function NBAPredictor() {
 
   return (
     <>
-      {showSplash && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            background: "#0B0F1A",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            animation: "splashFade 0.5s ease 1.2s forwards",
-          }}
-        >
-          <style>{`
-            @keyframes splashFade { to { opacity: 0; visibility: hidden; } }
-          `}</style>
-          <img
-            src="/splash.png"
-            alt="NBA Predictor"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        </div>
-      )}
+      
 
       <div
         style={{
