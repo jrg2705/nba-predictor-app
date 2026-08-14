@@ -14,6 +14,12 @@
         position: fixed; inset: 0; z-index: 99999;
         background: #0B0F1A;
         display: flex; align-items: center; justify-content: center;
+        transition: opacity 0.4s ease;
+      }
+      #initial-splash.hide {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
       }
       #initial-splash img {
         width: 100%; height: 100%; object-fit: cover;
@@ -27,9 +33,19 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      // Quitar splash sí o sí a los 2.5s (aunque React falle)
+      function hideSplash() {
+        var el = document.getElementById("initial-splash");
+        if (el) {
+          el.classList.add("hide");
+          setTimeout(function () { el.remove(); }, 500);
+        }
+      }
+      setTimeout(hideSplash, 2500);
+
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function () {});
         });
       }
     </script>
