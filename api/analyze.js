@@ -1,20 +1,45 @@
-// api/analyze.js — Análisis de partido NBA con stats + Groq
-// FASE 1: esqueleto. Recibe home/away, intenta stats básicas y llama a Groq.
-// Más adelante: OffRtg, DefRtg, Pace, L10, rest, H2H, book lines.
+// api/analyze.js — Análisis de partido NBA con stats balldontlie + Groq
+import { buildRealStats } from "./nbaStats.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
-const NBA_TEAMS = [
-  "Atlanta Hawks", "Boston Celtics", "Brooklyn Nets", "Charlotte Hornets",
-  "Chicago Bulls", "Cleveland Cavaliers", "Dallas Mavericks", "Denver Nuggets",
-  "Detroit Pistons", "Golden State Warriors", "Houston Rockets", "Indiana Pacers",
-  "LA Clippers", "Los Angeles Lakers", "Memphis Grizzlies", "Miami Heat",
-  "Milwaukee Bucks", "Minnesota Timberwolves", "New Orleans Pelicans", "New York Knicks",
-  "Oklahoma City Thunder", "Orlando Magic", "Philadelphia 76ers", "Phoenix Suns",
-  "Portland Trail Blazers", "Sacramento Kings", "San Antonio Spurs", "Toronto Raptors",
-  "Utah Jazz", "Washington Wizards",
-];
+function formatStatsBlock(realStats) {
+  if (!realStats || realStats.warning) {
+    return realStats?.warning
+      ? `STATS REALES: no disponibles (${realStats.warning}). Usa conocimiento general de NBA.`
+      : "STATS REALES: no disponibles. Usa conocimiento general de NBA.";
+  }
+
+  const fmt = (s) => {
+    if (!s) return "sin datos";
+    return [
+      `L10: ${s.record_L10 || "n/d"}`,
+      `pts/partido: ${s.avg_pts ?? "n/d"}`,
+      `pts permitidos: ${s.avg_pts_allowed ?? "n/d"}`,
+      `total medio partido: ${s.avg_game_total ?? "n/d"}`,
+      `descanso (días desde último): ${s.rest_days ?? "n/d"}`,
+      s.recent?.length
+        ? `últimos: ${s.recent.map((r) => `${r.result} vs ${r.opp} ${r.score}`).join("; ")}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  };
+
+  const h2h =
+    realStats.h2h && realStats.h2h.games > 0
+      ? `H2H reciente: ${realStats.h2h.homeWins}-${realStats.h2h.awayWins} (local-visitante en muestra de ${realStats.h2h.games}). ${
+          realStats.h2h.recent?.map((x) => x.score).join(" · ") || ""
+        }`
+      : "H2H: sin muestra reciente en API.";
+
+  return `STATS REALES (fuente: ${realStats.source}, temporada ${realStats.season ?? "?"}):
+LOCAL ${realStats.home?.team || ""}: ${fmt(realStats.home)}
+VISITANTE ${realStats.away?.team || ""}: ${fmt(realStats.away)}
+${h2h}
+Usa estas cifras para pace, totales, L10 y descanso. No inventes números contradictorios.`;
+}
 
 function buildPrompt(home, away, context = {}) {
   const bl = context.bookLines;
@@ -32,11 +57,13 @@ NO inventes otras líneas si estas están presentes.
 No hay líneas de banca cargadas: usa líneas de mercado típicas razonables y decláralas en cada campo "line".
 `;
 
+  const statsBlock = formatStatsBlock(context.realStats);
+
   return `Eres un analista experto de NBA (apuestas deportivas, solo uso estadístico y de referencia).
 
 PARTIDO: ${away} (visitante) @ ${home} (local)
 ${linesBlock}
-CONTEXTO EXTRA: ${JSON.stringify({ gameId: context.gameId || null }).slice(0, 500)}
+${statsBlock}
 
 Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con esta estructura exacta:
 
@@ -50,7 +77,7 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
     "line": <número o null>,
     "confidence_pct": <número>,
     "pick_summary": "DEBE ser un pick apostable concreto, ej: '${home} -3.5 CUBRE' o 'OVER 224.5' o '${away} ML' o '1H gana ${home}'",
-    "reasoning": "1-2 frases"
+    "reasoning": "1-2 frases citando stats si hay (L10, pts, rest)"
   },
   "alternative_method": {
     "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
@@ -58,18 +85,18 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
     "pick": "string corto accionable",
     "line": <número o null>,
     "confidence_pct": <número>,
-    "pick_summary": "OBLIGATORIO: pick apostable concreto del SEGUNDO mejor mercado (distinto a best_method). Ej: 'UNDER 224.5' o '${away} +3.5 CUBRE' o 'TT ${home} OVER 112.5'. NUNCA una frase vaga tipo 'partido de alto ritmo'.",
-    "reasoning": "1-2 frases explicando POR QUÉ ese mercado concreto"
+    "pick_summary": "OBLIGATORIO: pick apostable concreto del SEGUNDO mejor mercado (distinto a best_method). Ej: 'UNDER 224.5' o '${away} +3.5 CUBRE' o 'TT ${home} OVER 112.5'. NUNCA una frase vaga.",
+    "reasoning": "1-2 frases"
   },
   "spread": {
     "favored": "home" | "away",
-    "line": <número típico ej -3.5>,
+    "line": <número>,
     "covers": "SI" | "NO",
     "confidence_pct": <número>,
     "reasoning": "..."
   },
   "total": {
-    "line": <número típico ej 224.5>,
+    "line": <número>,
     "pick": "OVER" | "UNDER",
     "confidence_pct": <número>,
     "reasoning": "..."
@@ -93,34 +120,26 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
     "reasoning": "..."
   },
   "first_half_total": {
-    "line": <número típico ej 112.5>,
+    "line": <número>,
     "pick": "OVER" | "UNDER",
     "confidence_pct": <número>,
     "reasoning": "..."
   },
-  "pace_note": "nota sobre ritmo esperado",
-  "h2h_note": "nota H2H si aplica",
+  "pace_note": "nota sobre ritmo (usa avg_game_total / pts si hay stats)",
+  "h2h_note": "nota H2H si hay muestra",
   "analyst_take": "párrafo corto de análisis final"
 }
 
-Mercados disponibles (usa estos códigos en market):
-- ML = Moneyline (ganador del partido)
-- SP = Spread / hándicap
-- OU = Total puntos combinados Over/Under
-- TT_H = Team total del LOCAL
-- TT_A = Team total del VISITANTE
-- 1H = Ganador 1ª mitad
+Mercados: ML, SP, OU, TT_H, TT_A, 1H
 
 Reglas ESTRICTAS:
 - home_win_pct + away_win_pct ≈ 100
-- best_method y alternative_method DEBEN ser mercados DISTINTOS (ej. si best es SP, alternative puede ser OU, ML, TT_H, TT_A o 1H)
-- pick_summary de best y alternative: SIEMPRE un pick concreto apostable, NUNCA frases vagas tipo "partido de alto ritmo" o "ventaja en casa"
-  Ejemplos válidos: "${home} -3.5 CUBRE", "OVER 224.5", "UNDER 224.5", "${away} ML", "TT ${home} OVER 114.5", "1H gana ${home}"
-- alternative_method.market debe coincidir con el tipo de pick de pick_summary
-- Si hay líneas de banca, TODOS los campos "line" deben copiar esas cifras exactamente
-- Rellena SIEMPRE todos los bloques: spread, total, team_total_home, team_total_away, first_half, first_half_total
-- confidence_pct realista (55-75 típico; raramente >80)
-- Usa solo conocimiento general de NBA y el contexto dado; no inventes lesiones concretas si no están en el contexto
+- best_method y alternative_method DEBEN ser mercados DISTINTOS
+- pick_summary SIEMPRE pick concreto apostable (nunca "ventaja en casa" o "alto ritmo")
+- Si hay líneas de banca, TODOS los "line" copian esas cifras
+- Si hay stats reales, priorízalas en reasoning / pace_note / h2h_note
+- confidence_pct realista (55-75 típico)
+- No inventes lesiones concretas
 - Responde SOLO el JSON.`;
 }
 
@@ -144,22 +163,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // Placeholder de stats reales (fase 2: balldontlie + stats.nba.com)
-    const realStats = {
-      home: { note: "Stats detalladas en próxima versión" },
-      away: { note: "Stats detalladas en próxima versión" },
-      h2h: { totalGames: 0, homeWins: 0, awayWins: 0, games: [] },
-    };
+    const bdlKey = process.env.BALLDONTLIE_API_KEY || null;
+    const realStats = await buildRealStats(home, away, bdlKey);
 
     const gameContext = {
       gameId: gameId || null,
       bookLinesUsed: bookLines || null,
       season: "2025-26 / 2026-27",
+      statsSource: realStats.source,
+      statsWarning: realStats.warning || null,
     };
 
     const prompt = buildPrompt(home, away, {
       bookLines: bookLines || null,
       gameId: gameId || null,
+      realStats,
     });
 
     const groqRes = await fetch(GROQ_URL, {
@@ -174,8 +192,8 @@ export default async function handler(req, res) {
           { role: "system", content: "Respondes solo con JSON válido, sin markdown ni texto extra." },
           { role: "user", content: prompt },
         ],
-        temperature: 0.35,
-        max_tokens: 2500,
+        temperature: 0.3,
+        max_tokens: 2800,
       }),
     });
 
