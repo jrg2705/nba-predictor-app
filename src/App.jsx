@@ -553,19 +553,54 @@ export default function NBAPredictor() {
                     }}
                   >
                     <div style={{ fontSize: 11, color: "#67E8F9", letterSpacing: "0.12em", marginBottom: 8 }}>
-                      🥈 ALTERNATIVA
+                      🥈 ALTERNATIVA (2.º mejor mercado)
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
                       {result.alternative_method.pick_summary}
                     </div>
-                    <ConfidenceBadge pct={result.alternative_method.confidence_pct} />
-                    <p style={{ fontSize: 13, color: "#94A3B8", margin: "8px 0 0", fontStyle: "italic" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                      <span
+                        style={{
+                          background: "rgba(34,211,238,0.2)",
+                          border: "1px solid #22D3EE",
+                          color: "#67E8F9",
+                          borderRadius: 10,
+                          padding: "2px 10px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {METHOD_LABELS[result.alternative_method.market] || result.alternative_method.market}
+                      </span>
+                      {result.alternative_method.line != null && (
+                        <span style={{ fontSize: 12, color: "#94A3B8" }}>
+                          línea: <strong style={{ color: "#F1F5F9" }}>{result.alternative_method.line}</strong>
+                        </span>
+                      )}
+                      <ConfidenceBadge pct={result.alternative_method.confidence_pct} />
+                    </div>
+                    <p style={{ fontSize: 13, color: "#94A3B8", margin: 0, fontStyle: "italic" }}>
                       {result.alternative_method.reasoning}
                     </p>
                   </div>
                 )}
 
+                <div style={{ fontSize: 11, color: "#64748B", letterSpacing: "0.1em", marginBottom: 10 }}>
+                  TODOS LOS MERCADOS
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 11, color: "#22D3EE", marginBottom: 8 }}>💰 MONEYLINE</div>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                      {(result.home_win_pct ?? 0) >= (result.away_win_pct ?? 0) ? home : away}
+                    </div>
+                    <ConfidenceBadge
+                      pct={Math.max(result.home_win_pct ?? 0, result.away_win_pct ?? 0)}
+                    />
+                    <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>
+                      {away} {result.away_win_pct}% · {home} {result.home_win_pct}%
+                    </p>
+                  </div>
                   {result.spread && (
                     <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16 }}>
                       <div style={{ fontSize: 11, color: "#22D3EE", marginBottom: 8 }}>📏 SPREAD</div>
@@ -594,6 +629,9 @@ export default function NBAPredictor() {
                         {result.team_total_home.pick} {result.team_total_home.line}
                       </div>
                       <ConfidenceBadge pct={result.team_total_home.confidence_pct} />
+                      {result.team_total_home.reasoning && (
+                        <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>{result.team_total_home.reasoning}</p>
+                      )}
                     </div>
                   )}
                   {result.team_total_away && (
@@ -603,6 +641,29 @@ export default function NBAPredictor() {
                         {result.team_total_away.pick} {result.team_total_away.line}
                       </div>
                       <ConfidenceBadge pct={result.team_total_away.confidence_pct} />
+                      {result.team_total_away.reasoning && (
+                        <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>{result.team_total_away.reasoning}</p>
+                      )}
+                    </div>
+                  )}
+                  {result.first_half && (
+                    <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16 }}>
+                      <div style={{ fontSize: 11, color: "#22D3EE", marginBottom: 8 }}>⏱️ 1ª MITAD (ganador)</div>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                        {result.first_half.winner === "home" ? home : away}
+                      </div>
+                      <ConfidenceBadge pct={result.first_half.confidence_pct} />
+                      <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>{result.first_half.reasoning}</p>
+                    </div>
+                  )}
+                  {result.first_half_total && (
+                    <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16 }}>
+                      <div style={{ fontSize: 11, color: "#22D3EE", marginBottom: 8 }}>⏱️ 1H TOTAL</div>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                        {result.first_half_total.pick} {result.first_half_total.line}
+                      </div>
+                      <ConfidenceBadge pct={result.first_half_total.confidence_pct} />
+                      <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>{result.first_half_total.reasoning}</p>
                     </div>
                   )}
                 </div>
