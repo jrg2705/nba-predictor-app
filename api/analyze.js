@@ -17,10 +17,26 @@ const NBA_TEAMS = [
 ];
 
 function buildPrompt(home, away, context = {}) {
+  const bl = context.bookLines;
+  const linesBlock = bl
+    ? `
+LÍNEAS DE LA BANCA (OBLIGATORIO usar estas cifras en spread.line, total.line, team_total_*.line, first_half_total.line):
+- ML visitante: ${bl.mlAway ?? "n/d"} | ML local: ${bl.mlHome ?? "n/d"}
+- Spread del LOCAL: ${bl.spreadHome ?? "n/d"} (si es negativo, local favorito)
+- Total (OU): ${bl.total ?? "n/d"}
+- Team total visitante: ${bl.ttAway ?? "n/d"} | Team total local: ${bl.ttHome ?? "n/d"}
+- Total 1ª mitad: ${bl.hTotal ?? "n/d"} | Spread 1H local: ${bl.hSpreadHome ?? "n/d"}
+NO inventes otras líneas si estas están presentes.
+`
+    : `
+No hay líneas de banca cargadas: usa líneas de mercado típicas razonables y decláralas en cada campo "line".
+`;
+
   return `Eres un analista experto de NBA (apuestas deportivas, solo uso estadístico y de referencia).
 
 PARTIDO: ${away} (visitante) @ ${home} (local)
-CONTEXTO DISPONIBLE: ${JSON.stringify(context).slice(0, 2000)}
+${linesBlock}
+CONTEXTO EXTRA: ${JSON.stringify({ gameId: context.gameId || null }).slice(0, 500)}
 
 Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con esta estructura exacta:
 
@@ -98,8 +114,10 @@ Mercados disponibles (usa estos códigos en market):
 Reglas ESTRICTAS:
 - home_win_pct + away_win_pct ≈ 100
 - best_method y alternative_method DEBEN ser mercados DISTINTOS (ej. si best es SP, alternative puede ser OU, ML, TT_H, TT_A o 1H)
-- pick_summary de best y alternative: SIEMPRE un pick concreto apostable, nunca un título descriptivo vago
+- pick_summary de best y alternative: SIEMPRE un pick concreto apostable, NUNCA frases vagas tipo "partido de alto ritmo" o "ventaja en casa"
+  Ejemplos válidos: "${home} -3.5 CUBRE", "OVER 224.5", "UNDER 224.5", "${away} ML", "TT ${home} OVER 114.5", "1H gana ${home}"
 - alternative_method.market debe coincidir con el tipo de pick de pick_summary
+- Si hay líneas de banca, TODOS los campos "line" deben copiar esas cifras exactamente
 - Rellena SIEMPRE todos los bloques: spread, total, team_total_home, team_total_away, first_half, first_half_total
 - confidence_pct realista (55-75 típico; raramente >80)
 - Usa solo conocimiento general de NBA y el contexto dado; no inventes lesiones concretas si no están en el contexto
@@ -139,7 +157,10 @@ export default async function handler(req, res) {
       season: "2025-26 / 2026-27",
     };
 
-    const prompt = buildPrompt(home, away, { bookLines, gameId });
+    const prompt = buildPrompt(home, away, {
+      bookLines: bookLines || null,
+      gameId: gameId || null,
+    });
 
     const groqRes = await fetch(GROQ_URL, {
       method: "POST",
