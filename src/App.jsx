@@ -5,6 +5,7 @@ import { getCalibrationSummary, rankCalibratedMarkets } from "./calibration.js";
 import { buildTopPicks } from "./pickSelection.js";
 import BookLinesPanel from "./BookLinesPanel.jsx";
 import { findBookLinesForMatchup } from "./bookLines.js";
+import StatsPanel from "./StatsPanel.jsx";
 
 const TEAMS = [
   "Atlanta Hawks", "Boston Celtics", "Brooklyn Nets", "Charlotte Hornets",
@@ -486,6 +487,8 @@ export default function NBAPredictor() {
                     })()}
                   </div>
                 )}
+
+                <StatsPanel realStats={realStats} />
 
                 <div
                   style={{
