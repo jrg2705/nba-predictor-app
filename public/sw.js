@@ -1,5 +1,5 @@
-// Service worker — v2 invalida caché antigua que podía dejar la app en splash
-const CACHE = "nba-predictor-v2";
+// Service worker v3 — fuerza red para JS/CSS tras deploys
+const CACHE = "nba-predictor-v3";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -19,11 +19,11 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  // JS/CSS siempre de red primero (evita quedar atrapado con build viejo)
   if (
     url.pathname.startsWith("/assets/") ||
     url.pathname.endsWith(".js") ||
-    url.pathname.endsWith(".css")
+    url.pathname.endsWith(".css") ||
+    url.pathname.endsWith(".jsx")
   ) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
