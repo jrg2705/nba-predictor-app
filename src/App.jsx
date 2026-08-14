@@ -3,6 +3,8 @@ import { HISTORY_KEY, MAX_HISTORY, loadHistory, saveToHistory, clearHistory } fr
 import { DEFAULT_MIN_CONFIDENCE, CONFIDENCE_OPTIONS, isStrongPick } from "./strongPicks.js";
 import { getCalibrationSummary, rankCalibratedMarkets } from "./calibration.js";
 import { buildTopPicks } from "./pickSelection.js";
+import BookLinesPanel from "./BookLinesPanel.jsx";
+import { findBookLinesForMatchup } from "./bookLines.js";
 
 const TEAMS = [
   "Atlanta Hawks", "Boston Celtics", "Brooklyn Nets", "Charlotte Hornets",
@@ -113,6 +115,7 @@ export default function NBAPredictor() {
   const [generatedPicks, setGeneratedPicks] = useState(null);
   const [standings, setStandings] = useState(null);
   const [loadingStandings, setLoadingStandings] = useState(false);
+  const [bookLines, setBookLines] = useState({ date: null, games: [], errors: [] });
 
   useEffect(() => {
     const el = document.getElementById("initial-splash");
@@ -148,10 +151,16 @@ export default function NBAPredictor() {
     setAway(awayTeam);
 
     try {
+      const matchupLines = findBookLinesForMatchup(bookLines?.games, homeTeam, awayTeam);
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ home: homeTeam, away: awayTeam, gameId }),
+        body: JSON.stringify({
+          home: homeTeam,
+          away: awayTeam,
+          gameId,
+          bookLines: matchupLines || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error del servidor");
@@ -355,6 +364,10 @@ export default function NBAPredictor() {
           </p>
         </div>
 
+        <div style={{ maxWidth: 680, margin: "0 auto 8px" }}>
+          <BookLinesPanel bookLines={bookLines} onBookLinesChange={setBookLines} />
+        </div>
+
         <div
           style={{
             display: "flex",
@@ -469,6 +482,36 @@ export default function NBAPredictor() {
 
             {result && !loading && (
               <div style={{ maxWidth: 680, margin: "0 auto" }}>
+                {gameContext?.bookLinesUsed && (
+                  <div
+                    style={{
+                      background: "#1E293B",
+                      border: "1px solid #10B981",
+                      borderRadius: 10,
+                      padding: "12px 14px",
+                      marginBottom: 14,
+                      fontSize: 12,
+                      color: "#CBD5E1",
+                    }}
+                  >
+                    <div style={{ fontSize: 11, color: "#10B981", fontWeight: 700, marginBottom: 6 }}>
+                      📋 LÍNEAS DE LA BANCA APLICADAS
+                    </div>
+                    {(() => {
+                      const b = gameContext.bookLinesUsed;
+                      const bits = [];
+                      if (b.mlAway != null || b.mlHome != null)
+                        bits.push(`ML ${b.mlAway ?? "—"}/${b.mlHome ?? "—"}`);
+                      if (b.spreadHome != null) bits.push(`SP local ${b.spreadHome}`);
+                      if (b.total != null) bits.push(`OU ${b.total}`);
+                      if (b.ttAway != null || b.ttHome != null)
+                        bits.push(`TT V/L ${b.ttAway ?? "—"}/${b.ttHome ?? "—"}`);
+                      if (b.hTotal != null) bits.push(`1H total ${b.hTotal}`);
+                      return bits.join(" · ") || "Líneas cargadas";
+                    })()}
+                  </div>
+                )}
+
                 <div
                   style={{
                     background: "#1E293B",
