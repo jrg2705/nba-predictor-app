@@ -30,20 +30,20 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
   "best_method": {
     "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
     "side": "home" | "away" | "combined",
-    "pick": "string",
+    "pick": "string corto accionable (ej: CUBRE, OVER, UNDER, gana LOCAL)",
     "line": <número o null>,
     "confidence_pct": <número>,
-    "pick_summary": "texto corto del pick",
+    "pick_summary": "DEBE ser un pick apostable concreto, ej: '${home} -3.5 CUBRE' o 'OVER 224.5' o '${away} ML' o '1H gana ${home}'",
     "reasoning": "1-2 frases"
   },
   "alternative_method": {
-    "market": "...",
-    "side": "...",
-    "pick": "...",
-    "line": null,
+    "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
+    "side": "home" | "away" | "combined",
+    "pick": "string corto accionable",
+    "line": <número o null>,
     "confidence_pct": <número>,
-    "pick_summary": "...",
-    "reasoning": "..."
+    "pick_summary": "OBLIGATORIO: pick apostable concreto del SEGUNDO mejor mercado (distinto a best_method). Ej: 'UNDER 224.5' o '${away} +3.5 CUBRE' o 'TT ${home} OVER 112.5'. NUNCA una frase vaga tipo 'partido de alto ritmo'.",
+    "reasoning": "1-2 frases explicando POR QUÉ ese mercado concreto"
   },
   "spread": {
     "favored": "home" | "away",
@@ -72,6 +72,13 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
   },
   "first_half": {
     "winner": "home" | "away",
+    "line": null,
+    "confidence_pct": <número>,
+    "reasoning": "..."
+  },
+  "first_half_total": {
+    "line": <número típico ej 112.5>,
+    "pick": "OVER" | "UNDER",
     "confidence_pct": <número>,
     "reasoning": "..."
   },
@@ -80,11 +87,22 @@ Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con
   "analyst_take": "párrafo corto de análisis final"
 }
 
-Reglas:
+Mercados disponibles (usa estos códigos en market):
+- ML = Moneyline (ganador del partido)
+- SP = Spread / hándicap
+- OU = Total puntos combinados Over/Under
+- TT_H = Team total del LOCAL
+- TT_A = Team total del VISITANTE
+- 1H = Ganador 1ª mitad
+
+Reglas ESTRICTAS:
 - home_win_pct + away_win_pct ≈ 100
-- best_method y alternative_method deben ser mercados distintos
+- best_method y alternative_method DEBEN ser mercados DISTINTOS (ej. si best es SP, alternative puede ser OU, ML, TT_H, TT_A o 1H)
+- pick_summary de best y alternative: SIEMPRE un pick concreto apostable, nunca un título descriptivo vago
+- alternative_method.market debe coincidir con el tipo de pick de pick_summary
+- Rellena SIEMPRE todos los bloques: spread, total, team_total_home, team_total_away, first_half, first_half_total
 - confidence_pct realista (55-75 típico; raramente >80)
-- Usa solo conocimiento general de NBA y el contexto dado; no inventes lesiones concretas si no están en el contexto.
+- Usa solo conocimiento general de NBA y el contexto dado; no inventes lesiones concretas si no están en el contexto
 - Responde SOLO el JSON.`;
 }
 
