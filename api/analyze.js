@@ -1,5 +1,6 @@
 // api/analyze.js — Análisis de partido NBA con stats balldontlie + Groq
 import { buildRealStats } from "./nbaStats.js";
+import { fetchOddsForMatchup } from "./oddsHelper.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "openai/gpt-oss-120b"; // llama-3.3-70b-versatile retirado 16-ago-2026 (free/dev)
@@ -43,18 +44,20 @@ Usa estas cifras para pace, totales, L10 y descanso. No inventes números contra
 
 function buildPrompt(home, away, context = {}) {
   const bl = context.bookLines;
+  const src = bl?.source === "odds-api" ? "ODDS API (mercado vivo)" : "BANCA / líneas cargadas";
   const linesBlock = bl
     ? `
-LÍNEAS DE LA BANCA (OBLIGATORIO usar estas cifras en spread.line, total.line, team_total_*.line, first_half_total.line):
+LÍNEAS DE MERCADO — ${src}${bl.bookmaker ? ` · book: ${bl.bookmaker}` : ""}
+(OBLIGATORIO usar estas cifras en spread.line, total.line, team_total_*.line cuando existan):
 - ML visitante: ${bl.mlAway ?? "n/d"} | ML local: ${bl.mlHome ?? "n/d"}
 - Spread del LOCAL: ${bl.spreadHome ?? "n/d"} (si es negativo, local favorito)
 - Total (OU): ${bl.total ?? "n/d"}
 - Team total visitante: ${bl.ttAway ?? "n/d"} | Team total local: ${bl.ttHome ?? "n/d"}
 - Total 1ª mitad: ${bl.hTotal ?? "n/d"} | Spread 1H local: ${bl.hSpreadHome ?? "n/d"}
-NO inventes otras líneas si estas están presentes.
+NO inventes otras líneas si estas están presentes. Si falta un mercado (ej. TT/1H), estima con coherencia al total/spread.
 `
     : `
-No hay líneas de banca cargadas: usa líneas de mercado típicas razonables y decláralas en cada campo "line".
+No hay líneas de mercado (ni Odds API ni banca .txt): usa líneas típicas razonables y decláralas en cada campo "line".
 `;
 
   const statsBlock = formatStatsBlock(context.realStats);
@@ -160,16 +163,49 @@ export default async function handler(req, res) {
     const bdlKey = process.env.BALLDONTLIE_API_KEY || null;
     const realStats = await buildRealStats(home, away, bdlKey);
 
+    // Líneas: 1) banca .txt del cliente  2) Odds API  3) ninguna
+    let resolvedLines = bookLines || null;
+    let oddsMeta = null;
+    if (!resolvedLines) {
+      const oddsKey = process.env.ODDS_API_KEY || null;
+      if (oddsKey) {
+        try {
+          const oddsResult = await fetchOddsForMatchup(home, away, oddsKey);
+          if (oddsResult.lines) {
+            resolvedLines = oddsResult.lines;
+            oddsMeta = {
+              source: "odds-api",
+              bookmaker: oddsResult.lines.bookmaker || null,
+              matched: oddsResult.matched || null,
+              remainingRequests: oddsResult.remainingRequests || null,
+            };
+          } else {
+            oddsMeta = {
+              source: "odds-api",
+              warning: oddsResult.warning || "Sin líneas",
+              remainingRequests: oddsResult.remainingRequests || null,
+            };
+          }
+        } catch (e) {
+          oddsMeta = { source: "odds-api", warning: e.message };
+        }
+      }
+    } else {
+      oddsMeta = { source: "book-lines-txt" };
+    }
+
     const gameContext = {
       gameId: gameId || null,
-      bookLinesUsed: bookLines || null,
+      bookLinesUsed: resolvedLines || null,
+      linesSource: oddsMeta?.source || null,
+      oddsMeta,
       season: "2025-26 / 2026-27",
       statsSource: realStats.source,
       statsWarning: realStats.warning || null,
     };
 
     const prompt = buildPrompt(home, away, {
-      bookLines: bookLines || null,
+      bookLines: resolvedLines || null,
       gameId: gameId || null,
       realStats,
     });
