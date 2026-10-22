@@ -10,9 +10,29 @@ export function loadHistory() {
   }
 }
 
+function sameDay(isoA, isoB) {
+  try {
+    return new Date(isoA).toDateString() === new Date(isoB).toDateString();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Guarda un análisis. Si ya existe el mismo matchup (home+away) el mismo día,
+ * lo REEMPLAZA (el más reciente queda arriba) en lugar de duplicar.
+ */
 export function saveToHistory(entry) {
   const list = loadHistory();
-  const next = [entry, ...list].slice(0, MAX_HISTORY);
+  const filtered = list.filter(
+    (e) =>
+      !(
+        e.home === entry.home &&
+        e.away === entry.away &&
+        sameDay(e.date, entry.date)
+      )
+  );
+  const next = [entry, ...filtered].slice(0, MAX_HISTORY);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
   return next;
 }
