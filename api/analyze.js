@@ -2,7 +2,7 @@
 import { buildRealStats } from "./nbaStats.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-120b"; // llama-3.3-70b-versatile retirado 16-ago-2026 (free/dev)
 
 function formatStatsBlock(realStats) {
   if (!realStats || realStats.warning) {
@@ -59,88 +59,82 @@ No hay líneas de banca cargadas: usa líneas de mercado típicas razonables y d
 
   const statsBlock = formatStatsBlock(context.realStats);
 
-  return `Eres un analista experto de NBA (apuestas deportivas, solo uso estadístico y de referencia).
+  return `Eres un analista profesional de NBA. Analiza el partido:
+VISITANTE: ${away}
+LOCAL: ${home}
 
-PARTIDO: ${away} (visitante) @ ${home} (local)
-${linesBlock}
 ${statsBlock}
+${linesBlock}
 
-Analiza el partido y responde ÚNICAMENTE con un JSON válido (sin markdown) con esta estructura exacta:
-
+Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
 {
-  "home_win_pct": <número 0-100>,
-  "away_win_pct": <número 0-100>,
+  "home_win_pct": number,
+  "away_win_pct": number,
   "best_method": {
     "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
-    "side": "home" | "away" | "combined",
-    "pick": "string corto accionable (ej: CUBRE, OVER, UNDER, gana LOCAL)",
-    "line": <número o null>,
-    "confidence_pct": <número>,
-    "pick_summary": "DEBE ser un pick apostable concreto, ej: '${home} -3.5 CUBRE' o 'OVER 224.5' o '${away} ML' o '1H gana ${home}'",
-    "reasoning": "1-2 frases citando stats si hay (L10, pts, rest)"
+    "pick_summary": string,
+    "confidence_pct": number,
+    "line": number | null,
+    "reasoning": string
   },
   "alternative_method": {
     "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
-    "side": "home" | "away" | "combined",
-    "pick": "string corto accionable",
-    "line": <número o null>,
-    "confidence_pct": <número>,
-    "pick_summary": "OBLIGATORIO: pick apostable concreto del SEGUNDO mejor mercado (distinto a best_method). Ej: 'UNDER 224.5' o '${away} +3.5 CUBRE' o 'TT ${home} OVER 112.5'. NUNCA una frase vaga.",
-    "reasoning": "1-2 frases"
+    "pick_summary": string,
+    "confidence_pct": number,
+    "line": number | null,
+    "reasoning": string
   },
   "spread": {
     "favored": "home" | "away",
-    "line": <número>,
+    "line": number,
     "covers": "SI" | "NO",
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "confidence_pct": number,
+    "reasoning": string
   },
   "total": {
-    "line": <número>,
     "pick": "OVER" | "UNDER",
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "line": number,
+    "confidence_pct": number,
+    "reasoning": string
   },
   "team_total_home": {
-    "line": <número>,
     "pick": "OVER" | "UNDER",
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "line": number,
+    "confidence_pct": number,
+    "reasoning": string
   },
   "team_total_away": {
-    "line": <número>,
     "pick": "OVER" | "UNDER",
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "line": number,
+    "confidence_pct": number,
+    "reasoning": string
   },
   "first_half": {
     "winner": "home" | "away",
-    "line": null,
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "confidence_pct": number,
+    "reasoning": string
   },
   "first_half_total": {
-    "line": <número>,
     "pick": "OVER" | "UNDER",
-    "confidence_pct": <número>,
-    "reasoning": "..."
+    "line": number,
+    "confidence_pct": number,
+    "reasoning": string
   },
-  "pace_note": "nota sobre ritmo (usa avg_game_total / pts si hay stats)",
-  "h2h_note": "nota H2H si hay muestra",
-  "analyst_take": "párrafo corto de análisis final"
+  "analyst_take": string,
+  "pace_note": string,
+  "h2h_note": string
 }
 
-Mercados: ML, SP, OU, TT_H, TT_A, 1H
-
-Reglas ESTRICTAS:
-- home_win_pct + away_win_pct ≈ 100
-- best_method y alternative_method DEBEN ser mercados DISTINTOS
-- pick_summary SIEMPRE pick concreto apostable (nunca "ventaja en casa" o "alto ritmo")
-- Si hay líneas de banca, TODOS los "line" copian esas cifras
-- Si hay stats reales, priorízalas en reasoning / pace_note / h2h_note
-- confidence_pct realista (55-75 típico)
-- No inventes lesiones concretas
-- Responde SOLO el JSON.`;
+REGLAS DE pick_summary (OBLIGATORIO formato concreto):
+- ML: "CLE ML" o "PHI ML" (abreviación del equipo)
+- SP: "CLE -4.5 CUBRE" o "PHI +4.5 CUBRE"
+- OU: "OVER 224.5" o "UNDER 224.5"
+- TT: "CLE TT OVER 112.5" / "PHI TT UNDER 110"
+- 1H: "CLE 1H" o "OVER 1H 110.5"
+best_method y alternative_method deben ser mercados DISTINTOS.
+confidence_pct entre 50 y 78. Sé realista, no inventes certeza extrema.
+Usa stats reales cuando existan; si no, dilo en reasoning.
+`;
 }
 
 export default async function handler(req, res) {
@@ -199,9 +193,21 @@ export default async function handler(req, res) {
 
     if (!groqRes.ok) {
       const errText = await groqRes.text();
+      let msg = "Error de Groq";
+      try {
+        const j = JSON.parse(errText);
+        msg = j?.error?.message || j?.message || msg;
+      } catch (_) {
+        if (errText) msg = errText.slice(0, 200);
+      }
+      if (/model|deprecat|not found|does not exist/i.test(msg)) {
+        msg = `Modelo no disponible (${GROQ_MODEL}). ${msg}`;
+      }
       return res.status(502).json({
-        error: "Error de Groq",
+        error: msg,
         details: errText.slice(0, 400),
+        model: GROQ_MODEL,
+        status: groqRes.status,
       });
     }
 
