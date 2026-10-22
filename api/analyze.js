@@ -5,6 +5,48 @@ import { fetchOddsForMatchup } from "./oddsHelper.js";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "openai/gpt-oss-120b"; // llama-3.3-70b-versatile retirado 16-ago-2026 (free/dev)
 
+function toPct(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  // Modelo a veces devuelve 0.52 en vez de 52
+  let p = n > 0 && n <= 1.5 ? n * 100 : n;
+  p = Math.round(p * 10) / 10;
+  return Math.max(0, Math.min(100, p));
+}
+
+function normalizeAnalysis(a) {
+  if (!a || typeof a !== "object") return a;
+  const home = toPct(a.home_win_pct);
+  const away = toPct(a.away_win_pct);
+  if (home != null) a.home_win_pct = home;
+  if (away != null) a.away_win_pct = away;
+  if (home != null && away != null && home + away > 0) {
+    const s = home + away;
+    if (Math.abs(s - 100) > 8) {
+      a.home_win_pct = Math.round((home / s) * 1000) / 10;
+      a.away_win_pct = Math.round((100 - a.home_win_pct) * 10) / 10;
+    }
+  }
+  const confFields = [
+    ["best_method", "confidence_pct"],
+    ["alternative_method", "confidence_pct"],
+    ["spread", "confidence_pct"],
+    ["total", "confidence_pct"],
+    ["team_total_home", "confidence_pct"],
+    ["team_total_away", "confidence_pct"],
+    ["first_half", "confidence_pct"],
+    ["first_half_total", "confidence_pct"],
+  ];
+  for (const [obj, key] of confFields) {
+    if (a[obj] && a[obj][key] != null) {
+      const c = toPct(a[obj][key]);
+      if (c != null) a[obj][key] = c;
+    }
+  }
+  return a;
+}
+
 function formatStatsBlock(realStats) {
   if (!realStats || realStats.warning) {
     return realStats?.warning
@@ -128,15 +170,12 @@ Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
   "h2h_note": string
 }
 
-REGLAS DE pick_summary (OBLIGATORIO formato concreto):
-- ML: "CLE ML" o "PHI ML" (abreviación del equipo)
-- SP: "CLE -4.5 CUBRE" o "PHI +4.5 CUBRE"
-- OU: "OVER 224.5" o "UNDER 224.5"
-- TT: "CLE TT OVER 112.5" / "PHI TT UNDER 110"
-- 1H: "CLE 1H" o "OVER 1H 110.5"
-best_method y alternative_method deben ser mercados DISTINTOS.
-confidence_pct entre 50 y 78. Sé realista, no inventes certeza extrema.
-Usa stats reales cuando existan; si no, dilo en reasoning.
+REGLAS IMPORTANTES:
+- home_win_pct y away_win_pct son PORCENTAJES enteros o con 1 decimal de 0 a 100 (ej. 52 y 48), NUNCA fracciones 0-1.
+- pick_summary formato concreto: "CLE +2.5 CUBRE", "OVER 224.5", "PHI ML", etc.
+- best_method y alternative_method mercados DISTINTOS.
+- confidence_pct entre 50 y 78.
+- Usa stats reales cuando existan; si no, dilo en reasoning.
 `;
 }
 
@@ -163,7 +202,6 @@ export default async function handler(req, res) {
     const bdlKey = process.env.BALLDONTLIE_API_KEY || null;
     const realStats = await buildRealStats(home, away, bdlKey);
 
-    // Líneas: 1) banca .txt del cliente  2) Odds API  3) ninguna
     let resolvedLines = bookLines || null;
     let oddsMeta = null;
     if (!resolvedLines) {
@@ -219,7 +257,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [
-          { role: "system", content: "Respondes solo con JSON válido, sin markdown ni texto extra." },
+          { role: "system", content: "Respondes solo con JSON válido, sin markdown ni texto extra. home_win_pct y away_win_pct van de 0 a 100 (porcentaje), nunca 0-1." },
           { role: "user", content: prompt },
         ],
         temperature: 0.3,
@@ -252,7 +290,7 @@ export default async function handler(req, res) {
     let analysis;
     try {
       const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-      analysis = JSON.parse(cleaned);
+      analysis = normalizeAnalysis(JSON.parse(cleaned));
     } catch {
       return res.status(502).json({
         error: "No se pudo parsear la respuesta de la IA",
