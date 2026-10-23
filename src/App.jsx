@@ -1,1 +1,2 @@
-PLACEHOLDER_WILL_FAIL
+import NBAPredictor from "./NBAPredictorApp.jsx";
+export default NBAPredictor;
