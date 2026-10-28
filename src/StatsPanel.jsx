@@ -5,6 +5,9 @@ export default function StatsPanel({ realStats, elo, eloMeta }) {
   const hasStats =
     realStats && (realStats.home || realStats.away || realStats.warning);
 
+  const eloData = elo || realStats?.elo || null;
+  const eloMetaData = eloMeta || realStats?.eloMeta || null;
+
   return (
     <>
       {hasStats && (
@@ -60,7 +63,7 @@ export default function StatsPanel({ realStats, elo, eloMeta }) {
           )}
         </div>
       )}
-      <EloPanel elo={elo} eloMeta={eloMeta} />
+      <EloPanel elo={eloData} eloMeta={eloMetaData} />
     </>
   );
 }

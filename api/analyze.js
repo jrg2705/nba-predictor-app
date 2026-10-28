@@ -331,6 +331,11 @@ export default async function handler(req, res) {
       });
     }
 
+    if (realStats && typeof realStats === "object") {
+      realStats.elo = eloCtx;
+      realStats.eloMeta = eloMeta;
+    }
+
     return res.status(200).json({
       analysis,
       realStats,
