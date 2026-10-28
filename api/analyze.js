@@ -1,15 +1,15 @@
-// api/analyze.js — Análisis de partido NBA con stats balldontlie + Groq
+// api/analyze.js — Análisis de partido NBA con stats balldontlie + Groq + Elo
 import { buildRealStats } from "./nbaStats.js";
 import { fetchOddsForMatchup } from "./oddsHelper.js";
+import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "./eloHelper.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "openai/gpt-oss-120b"; // llama-3.3-70b-versatile retirado 16-ago-2026 (free/dev)
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 function toPct(v) {
   if (v == null || v === "") return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
-  // Modelo a veces devuelve 0.52 en vez de 52
   let p = n > 0 && n <= 1.5 ? n * 100 : n;
   p = Math.round(p * 10) / 10;
   return Math.max(0, Math.min(100, p));
@@ -103,12 +103,16 @@ No hay líneas de mercado (ni Odds API ni banca .txt): usa líneas típicas razo
 `;
 
   const statsBlock = formatStatsBlock(context.realStats);
+  const eloBlock = context.eloBlock || "ELO: no calculado.";
 
   return `Eres un analista profesional de NBA. Analiza el partido:
 VISITANTE: ${away}
 LOCAL: ${home}
 
 ${statsBlock}
+
+${eloBlock}
+
 ${linesBlock}
 
 Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
@@ -171,7 +175,11 @@ Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
 }
 
 REGLAS IMPORTANTES:
-- home_win_pct y away_win_pct son PORCENTAJES enteros o con 1 decimal de 0 a 100 (ej. 52 y 48), NUNCA fracciones 0-1.
+- El bloque ELO es un REFUERZO: combínalo con stats y líneas; no ignores stats a favor solo de Elo.
+- Si EDGE Elo vs ML >= 3% a un lado y las stats no lo contradicen fuerte, puedes priorizar ML/spread de ese lado o subir un poco confidence.
+- Si Elo y stats van en direcciones opuestas, baja confidence_pct o usa alternative_method.
+- Elo NO es la herramienta principal para OVER/UNDER (usa pace/pts); sí para ML y spread.
+- home_win_pct y away_win_pct son PORCENTAJES de 0 a 100 (ej. 52 y 48), NUNCA fracciones 0-1.
 - pick_summary formato concreto: "CLE +2.5 CUBRE", "OVER 224.5", "PHI ML", etc.
 - best_method y alternative_method mercados DISTINTOS.
 - confidence_pct entre 50 y 78.
@@ -232,12 +240,32 @@ export default async function handler(req, res) {
       oddsMeta = { source: "book-lines-txt" };
     }
 
+    let eloMeta = null;
+    let eloCtx = null;
+    let eloBlock = "ELO: no calculado.";
+    try {
+      const eloBuilt = await buildCurrentElo(bdlKey, undefined);
+      eloMeta = {
+        source: eloBuilt.source,
+        season: eloBuilt.season,
+        gamesApplied: eloBuilt.gamesApplied,
+        warning: eloBuilt.warning || null,
+      };
+      eloCtx = eloMatchupContext(eloBuilt.ratings, home, away, resolvedLines);
+      eloBlock = formatEloBlock(eloCtx, eloMeta);
+    } catch (e) {
+      eloMeta = { source: "error", warning: e.message };
+      eloBlock = `ELO: error (${e.message})`;
+    }
+
     const gameContext = {
       gameId: gameId || null,
       bookLinesUsed: resolvedLines || null,
       linesSource: oddsMeta?.source || null,
       oddsMeta,
-      season: "2025-26 / 2026-27",
+      elo: eloCtx,
+      eloMeta,
+      season: "2026-27",
       statsSource: realStats.source,
       statsWarning: realStats.warning || null,
     };
@@ -246,6 +274,7 @@ export default async function handler(req, res) {
       bookLines: resolvedLines || null,
       gameId: gameId || null,
       realStats,
+      eloBlock,
     });
 
     const groqRes = await fetch(GROQ_URL, {
@@ -257,7 +286,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [
-          { role: "system", content: "Respondes solo con JSON válido, sin markdown ni texto extra. home_win_pct y away_win_pct van de 0 a 100 (porcentaje), nunca 0-1." },
+          {
+            role: "system",
+            content:
+              "Respondes solo con JSON válido, sin markdown ni texto extra. home_win_pct y away_win_pct van de 0 a 100 (porcentaje), nunca 0-1. Usa ELO como refuerzo de ML/spread, no como única señal.",
+          },
           { role: "user", content: prompt },
         ],
         temperature: 0.3,
