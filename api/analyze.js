@@ -1,4 +1,4 @@
-// api/analyze.js — Análisis de partido NBA con stats balldontlie + Groq + Elo
+// api/analyze.js — Análisis NBA: stats + Groq + Elo (mercados ML/SP/OU/1H)
 import { buildRealStats } from "./nbaStats.js";
 import { fetchOddsForMatchup } from "./oddsHelper.js";
 import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "./eloHelper.js";
@@ -28,17 +28,13 @@ function normalizeAnalysis(a) {
       a.away_win_pct = Math.round((100 - a.home_win_pct) * 10) / 10;
     }
   }
-  const confFields = [
+  for (const [obj, key] of [
     ["best_method", "confidence_pct"],
     ["alternative_method", "confidence_pct"],
     ["spread", "confidence_pct"],
     ["total", "confidence_pct"],
-    ["team_total_home", "confidence_pct"],
-    ["team_total_away", "confidence_pct"],
     ["first_half", "confidence_pct"],
-    ["first_half_total", "confidence_pct"],
-  ];
-  for (const [obj, key] of confFields) {
+  ]) {
     if (a[obj] && a[obj][key] != null) {
       const c = toPct(a[obj][key]);
       if (c != null) a[obj][key] = c;
@@ -53,7 +49,6 @@ function formatStatsBlock(realStats) {
       ? `STATS REALES: no disponibles (${realStats.warning}). Usa conocimiento general de NBA.`
       : "STATS REALES: no disponibles. Usa conocimiento general de NBA.";
   }
-
   const fmt = (s) => {
     if (!s) return "sin datos";
     return [
@@ -69,14 +64,12 @@ function formatStatsBlock(realStats) {
       .filter(Boolean)
       .join(" | ");
   };
-
   const h2h =
     realStats.h2h && realStats.h2h.games > 0
-      ? `H2H reciente: ${realStats.h2h.homeWins}-${realStats.h2h.awayWins} (local-visitante en muestra de ${realStats.h2h.games}). ${
+      ? `H2H reciente: ${realStats.h2h.homeWins}-${realStats.h2h.awayWins} (muestra ${realStats.h2h.games}). ${
           realStats.h2h.recent?.map((x) => x.score).join(" · ") || ""
         }`
       : "H2H: sin muestra reciente en API.";
-
   return `STATS REALES (fuente: ${realStats.source}, temporada ${realStats.season ?? "?"}):
 LOCAL ${realStats.home?.team || ""}: ${fmt(realStats.home)}
 VISITANTE ${realStats.away?.team || ""}: ${fmt(realStats.away)}
@@ -90,16 +83,16 @@ function buildPrompt(home, away, context = {}) {
   const linesBlock = bl
     ? `
 LÍNEAS DE MERCADO — ${src}${bl.bookmaker ? ` · book: ${bl.bookmaker}` : ""}
-(OBLIGATORIO usar estas cifras en spread.line, total.line, team_total_*.line cuando existan):
+(OBLIGATORIO usar estas cifras en spread.line y total.line cuando existan):
 - ML visitante: ${bl.mlAway ?? "n/d"} | ML local: ${bl.mlHome ?? "n/d"}
 - Spread del LOCAL: ${bl.spreadHome ?? "n/d"} (si es negativo, local favorito)
 - Total (OU): ${bl.total ?? "n/d"}
-- Team total visitante: ${bl.ttAway ?? "n/d"} | Team total local: ${bl.ttHome ?? "n/d"}
-- Total 1ª mitad: ${bl.hTotal ?? "n/d"} | Spread 1H local: ${bl.hSpreadHome ?? "n/d"}
-NO inventes otras líneas si estas están presentes. Si falta un mercado (ej. TT/1H), estima con coherencia al total/spread.
+NO inventes otras líneas si estas están presentes.
+Mercados SOLO: ML, Spread (SP), Total (OU) y ganador 1ª mitad (1H). NO generes team totals ni total 1H.
 `
     : `
-No hay líneas de mercado (ni Odds API ni banca .txt): usa líneas típicas razonables y decláralas en cada campo "line".
+No hay líneas de mercado: usa líneas típicas razonables y decláralas en cada campo "line".
+Mercados SOLO: ML, Spread (SP), Total (OU) y ganador 1ª mitad (1H). NO generes team totals ni total 1H.
 `;
 
   const statsBlock = formatStatsBlock(context.realStats);
@@ -120,14 +113,14 @@ Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
   "home_win_pct": number,
   "away_win_pct": number,
   "best_method": {
-    "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
+    "market": "ML" | "SP" | "OU" | "1H",
     "pick_summary": string,
     "confidence_pct": number,
     "line": number | null,
     "reasoning": string
   },
   "alternative_method": {
-    "market": "ML" | "SP" | "OU" | "TT_H" | "TT_A" | "1H",
+    "market": "ML" | "SP" | "OU" | "1H",
     "pick_summary": string,
     "confidence_pct": number,
     "line": number | null,
@@ -146,26 +139,8 @@ Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
     "confidence_pct": number,
     "reasoning": string
   },
-  "team_total_home": {
-    "pick": "OVER" | "UNDER",
-    "line": number,
-    "confidence_pct": number,
-    "reasoning": string
-  },
-  "team_total_away": {
-    "pick": "OVER" | "UNDER",
-    "line": number,
-    "confidence_pct": number,
-    "reasoning": string
-  },
   "first_half": {
     "winner": "home" | "away",
-    "confidence_pct": number,
-    "reasoning": string
-  },
-  "first_half_total": {
-    "pick": "OVER" | "UNDER",
-    "line": number,
     "confidence_pct": number,
     "reasoning": string
   },
@@ -176,12 +151,13 @@ Responde SOLO con un JSON válido (sin markdown) con esta estructura exacta:
 
 REGLAS IMPORTANTES:
 - El bloque ELO es un REFUERZO: combínalo con stats y líneas; no ignores stats a favor solo de Elo.
-- Si EDGE Elo vs ML >= 3% a un lado y las stats no lo contradicen fuerte, puedes priorizar ML/spread de ese lado o subir un poco confidence.
+- Si EDGE Elo vs ML >= 3% y stats no contradicen, puedes priorizar ML/spread de ese lado.
 - Si Elo y stats van en direcciones opuestas, baja confidence_pct o usa alternative_method.
-- Elo NO es la herramienta principal para OVER/UNDER (usa pace/pts); sí para ML y spread.
-- home_win_pct y away_win_pct son PORCENTAJES de 0 a 100 (ej. 52 y 48), NUNCA fracciones 0-1.
-- pick_summary formato concreto: "CLE +2.5 CUBRE", "OVER 224.5", "PHI ML", etc.
+- Elo NO es la herramienta principal para OVER/UNDER; sí para ML y spread.
+- home_win_pct y away_win_pct: 0 a 100, NUNCA fracciones 0-1.
+- pick_summary concreto: "CLE +2.5 CUBRE", "OVER 224.5", "PHI ML", etc.
 - best_method y alternative_method mercados DISTINTOS.
+- SOLO mercados ML, SP, OU y 1H (ganador). NO incluyas team_total ni first_half_total.
 - confidence_pct entre 50 y 78.
 - Usa stats reales cuando existan; si no, dilo en reasoning.
 `;
@@ -289,12 +265,12 @@ export default async function handler(req, res) {
           {
             role: "system",
             content:
-              "Respondes solo con JSON válido, sin markdown ni texto extra. home_win_pct y away_win_pct van de 0 a 100 (porcentaje), nunca 0-1. Usa ELO como refuerzo de ML/spread, no como única señal.",
+              "Respondes solo con JSON válido, sin markdown. home_win_pct y away_win_pct de 0 a 100. Solo mercados ML, SP, OU y 1H. ELO refuerza ML/spread.",
           },
           { role: "user", content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: 2800,
+        max_tokens: 2200,
       }),
     });
 
