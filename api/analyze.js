@@ -1,7 +1,7 @@
 // api/analyze.js — Análisis NBA: stats + Groq + Elo (mercados ML/SP/OU/1H)
-import { buildRealStats } from "./nbaStats.js";
-import { fetchOddsForMatchup } from "./oddsHelper.js";
-import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "./eloHelper.js";
+import { buildRealStats } from "../lib/nbaStats.js";
+import { fetchOddsForMatchup } from "../lib/oddsHelper.js";
+import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "../lib/eloHelper.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "openai/gpt-oss-120b";
