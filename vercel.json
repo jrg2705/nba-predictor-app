@@ -3,12 +3,11 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/analyze.js": {
-      "maxDuration": 45
-    }
+    "api/analyze.js": { "maxDuration": 45 },
+    "api/history.js": { "maxDuration": 20 },
+    "api/history-export.js": { "maxDuration": 30 }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

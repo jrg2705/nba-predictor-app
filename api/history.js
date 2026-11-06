@@ -1,5 +1,5 @@
 // api/history.js — Historial en Neon
-import { getSql, ensureHistoryTable } from "./db.js";
+import { getSql, ensureHistoryTable } from "../lib/db.js";
 
 function rowToEntry(r) {
   return {

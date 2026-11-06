@@ -1,5 +1,5 @@
 // api/history-export.js — Export CSV historial Neon
-import { getSql, ensureHistoryTable } from "./db.js";
+import { getSql, ensureHistoryTable } from "../lib/db.js";
 
 function csvEscape(v) {
   if (v == null) return "";
