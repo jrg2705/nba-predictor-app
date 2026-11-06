@@ -8,6 +8,7 @@ import { findBookLinesForMatchup } from "./bookLines.js";
 import StatsPanel from "./StatsPanel.jsx";
 import ResultsPanel from "./ResultsPanel.jsx";
 import TicketsPanel from "./TicketsPanel.jsx";
+import HistoryPanel from "./HistoryPanel.jsx";
 import { loadTickets, createTicketFromPicks, updatePickStatus, deleteTicket, clearTickets } from "./ticketsStorage.js";
 
 const TEAMS = [
@@ -782,97 +783,20 @@ export default function NBAPredictor() {
 
         {/* —— HISTORIAL —— */}
         {tab === "history" && (
-          <div style={{ maxWidth: 680, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-              <h2 style={{ fontSize: 16, margin: 0 }}>🕓 Historial</h2>
-              <div style={{ display: "flex", gap: 8 }}>
-                {todayAnalyzed.length > 0 && (
-                  <button
-                    onClick={handleExportToday}
-                    style={{
-                      background: "#1E293B",
-                      border: "1px solid #10B981",
-                      color: "#10B981",
-                      borderRadius: 6,
-                      padding: "6px 12px",
-                      fontSize: 11,
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
-                  >
-                    📄 Exportar hoy
-                  </button>
-                )}
-                {history.length > 0 && (
-                  <button
-                    onClick={() => {
-                      clearHistory();
-                      setHistory([]);
-                    }}
-                    style={{
-                      background: "transparent",
-                      border: "1px solid #EF4444",
-                      color: "#EF4444",
-                      borderRadius: 6,
-                      padding: "6px 12px",
-                      fontSize: 11,
-                      cursor: "pointer",
-                    }}
-                  >
-                    🗑️ Borrar
-                  </button>
-                )}
-              </div>
-            </div>
-            <p style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>
-              Solo en este dispositivo · Máx {MAX_HISTORY} entradas
-            </p>
-            {history.length === 0 && (
-              <p style={{ textAlign: "center", color: "#64748B", padding: 40 }}>Aún no hay predicciones.</p>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {history.map((entry) => (
-                <div
-                  key={entry.id}
-                  onClick={() => {
-                    setHome(entry.home);
-                    setAway(entry.away);
-                    setResult(entry.analysis);
-                    setRealStats(entry.realStats || null);
-                    setGameContext(entry.gameContext || null);
-                    setTab("predictor");
-                  }}
-                  style={{
-                    background: "#1E293B",
-                    border: "1px solid #334155",
-                    borderRadius: 12,
-                    padding: 16,
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>
-                      {entry.away} @ {entry.home}
-                    </span>
-                    <span style={{ fontSize: 10, color: "#64748B" }}>
-                      {new Date(entry.date).toLocaleString("es-ES", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                    ML {entry.analysis?.home_win_pct}% / {entry.analysis?.away_win_pct}%
-                    {entry.analysis?.best_method && (
-                      <> · 🏆 {entry.analysis.best_method.pick_summary}</>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <HistoryPanel
+            history={history}
+            setHistory={setHistory}
+            todayCount={todayAnalyzed.length}
+            onExportToday={handleExportToday}
+            onOpenEntry={(entry) => {
+              setHome(entry.home);
+              setAway(entry.away);
+              setResult(entry.analysis);
+              setRealStats(entry.realStats || null);
+              setGameContext(entry.gameContext || null);
+              setTab("predictor");
+            }}
+          />
         )}
 
         {/* —— TRACK RECORD —— */}
