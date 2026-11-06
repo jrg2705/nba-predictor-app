@@ -1,5 +1,5 @@
-// Service worker v4 — invalida cachés rotas (PLACEHOLDER / builds viejos)
-const CACHE = "nba-predictor-v4";
+// Service worker v5 — fuerza red + limpia cachés (historial Neon / HistoryPanel)
+const CACHE = "nba-predictor-v5";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -13,7 +13,6 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// No cachear casi nada: siempre red primero
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   e.respondWith(

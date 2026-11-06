@@ -1,4 +1,4 @@
-// src/HistoryPanel.jsx — Historial con filtro por fecha + export CSV (Neon)
+// src/HistoryPanel.jsx — Historial con filtro por fecha + export CSV (Neon) · panel-v2
 import { useState, useEffect } from "react";
 import {
   MAX_HISTORY,
