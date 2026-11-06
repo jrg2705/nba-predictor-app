@@ -1,7 +1,7 @@
 // api/analyze.js — Análisis NBA: stats + Groq + Elo
-import { buildRealStats } from "./nbaStats.js";
-import { fetchOddsForMatchup } from "./oddsHelper.js";
-import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "./eloHelper.js";
+import { buildRealStats } from "../lib/nbaStats.js";
+import { fetchOddsForMatchup } from "../lib/oddsHelper.js";
+import { buildCurrentElo, eloMatchupContext, formatEloBlock } from "../lib/eloHelper.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "openai/gpt-oss-120b";
@@ -74,52 +74,24 @@ function formatStatsBlock(realStats) {
 LOCAL ${realStats.home?.team || ""}: ${fmt(realStats.home)}
 VISITANTE ${realStats.away?.team || ""}: ${fmt(realStats.away)}
 ${h2h}
-Usa estas cifras para pace, totales, L10 y descanso. No inventes números contradictorios.`;
+Usa estas cifras para pace, totales, L10 y descanso.`;
 }
 
 function buildPrompt(home, away, context = {}) {
   const bl = context.bookLines;
-  const src = bl?.source === "odds-api" ? "ODDS API (mercado vivo)" : "BANCA / líneas cargadas";
+  const src = bl?.source === "odds-api" ? "ODDS API" : "BANCA";
   const linesBlock = bl
-    ? `
-LÍNEAS DE MERCADO — ${src}${bl.bookmaker ? ` · book: ${bl.bookmaker}` : ""}
-- ML visitante: ${bl.mlAway ?? "n/d"} | ML local: ${bl.mlHome ?? "n/d"}
-- Spread del LOCAL: ${bl.spreadHome ?? "n/d"}
-- Total (OU): ${bl.total ?? "n/d"}
-Mercados SOLO: ML, SP, OU y 1H.
-`
-    : `
-Sin líneas de mercado. Mercados SOLO: ML, SP, OU y 1H.
-`;
-
+    ? `LÍNEAS (${src}): ML ${bl.mlAway ?? "—"}/${bl.mlHome ?? "—"} · SP local ${bl.spreadHome ?? "—"} · OU ${bl.total ?? "—"}`
+    : "Sin líneas de mercado.";
   const statsBlock = formatStatsBlock(context.realStats);
   const eloBlock = context.eloBlock || "ELO: no calculado.";
-
-  return `Eres un analista profesional de NBA. Analiza:
-VISITANTE: ${away}
-LOCAL: ${home}
-
+  return `Eres analista NBA. VISITANTE: ${away} | LOCAL: ${home}
 ${statsBlock}
-
 ${eloBlock}
-
 ${linesBlock}
-
-Responde SOLO JSON válido:
-{
-  "home_win_pct": number,
-  "away_win_pct": number,
-  "best_method": { "market": "ML"|"SP"|"OU"|"1H", "pick_summary": string, "confidence_pct": number, "line": number|null, "reasoning": string },
-  "alternative_method": { "market": "ML"|"SP"|"OU"|"1H", "pick_summary": string, "confidence_pct": number, "line": number|null, "reasoning": string },
-  "spread": { "favored": "home"|"away", "line": number, "covers": "SI"|"NO", "confidence_pct": number, "reasoning": string },
-  "total": { "pick": "OVER"|"UNDER", "line": number, "confidence_pct": number, "reasoning": string },
-  "first_half": { "winner": "home"|"away", "confidence_pct": number, "reasoning": string },
-  "analyst_take": string,
-  "pace_note": string,
-  "h2h_note": string
-}
-REGLAS: porcentajes 0-100; solo ML/SP/OU/1H; Elo refuerza ML/spread; confidence 50-78.
-`;
+Responde SOLO JSON:
+{"home_win_pct":n,"away_win_pct":n,"best_method":{"market":"ML|SP|OU|1H","pick_summary":s,"confidence_pct":n,"line":n|null,"reasoning":s},"alternative_method":{"market":"ML|SP|OU|1H","pick_summary":s,"confidence_pct":n,"line":n|null,"reasoning":s},"spread":{"favored":"home|away","line":n,"covers":"SI|NO","confidence_pct":n,"reasoning":s},"total":{"pick":"OVER|UNDER","line":n,"confidence_pct":n,"reasoning":s},"first_half":{"winner":"home|away","confidence_pct":n,"reasoning":s},"analyst_take":s,"pace_note":s,"h2h_note":s}
+REGLAS: % 0-100; solo ML/SP/OU/1H; Elo refuerza ML/SP; conf 50-78.`;
 }
 
 export default async function handler(req, res) {
@@ -128,51 +100,33 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
     const { home, away, gameId, bookLines } = req.body || {};
     if (!home || !away || home === away) {
-      return res.status(400).json({ error: "Selecciona dos equipos diferentes (home y away)." });
+      return res.status(400).json({ error: "Selecciona dos equipos diferentes." });
     }
     const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) {
-      return res.status(500).json({ error: "Falta GROQ_API_KEY." });
-    }
+    if (!groqKey) return res.status(500).json({ error: "Falta GROQ_API_KEY." });
     const bdlKey = process.env.BALLDONTLIE_API_KEY || null;
     const realStats = await buildRealStats(home, away, bdlKey);
-
     let resolvedLines = bookLines || null;
     let oddsMeta = null;
-    if (!resolvedLines) {
-      const oddsKey = process.env.ODDS_API_KEY || null;
-      if (oddsKey) {
-        try {
-          const oddsResult = await fetchOddsForMatchup(home, away, oddsKey);
-          if (oddsResult.lines) {
-            resolvedLines = oddsResult.lines;
-            oddsMeta = { source: "odds-api", bookmaker: oddsResult.lines.bookmaker || null };
-          } else {
-            oddsMeta = { source: "odds-api", warning: oddsResult.warning || "Sin líneas" };
-          }
-        } catch (e) {
-          oddsMeta = { source: "odds-api", warning: e.message };
-        }
+    if (!resolvedLines && process.env.ODDS_API_KEY) {
+      try {
+        const oddsResult = await fetchOddsForMatchup(home, away, process.env.ODDS_API_KEY);
+        if (oddsResult.lines) {
+          resolvedLines = oddsResult.lines;
+          oddsMeta = { source: "odds-api", bookmaker: oddsResult.lines.bookmaker || null };
+        } else oddsMeta = { source: "odds-api", warning: oddsResult.warning || "Sin líneas" };
+      } catch (e) {
+        oddsMeta = { source: "odds-api", warning: e.message };
       }
-    } else {
-      oddsMeta = { source: "book-lines-txt" };
-    }
+    } else if (resolvedLines) oddsMeta = { source: "book-lines-txt" };
 
-    let eloMeta = null;
-    let eloCtx = null;
-    let eloBlock = "ELO: no calculado.";
+    let eloMeta = null, eloCtx = null, eloBlock = "ELO: no calculado.";
     try {
       const eloBuilt = await buildCurrentElo(bdlKey, undefined);
-      eloMeta = {
-        source: eloBuilt.source,
-        season: eloBuilt.season,
-        gamesApplied: eloBuilt.gamesApplied,
-        warning: eloBuilt.warning || null,
-      };
+      eloMeta = { source: eloBuilt.source, season: eloBuilt.season, gamesApplied: eloBuilt.gamesApplied, warning: eloBuilt.warning || null };
       eloCtx = eloMatchupContext(eloBuilt.ratings, home, away, resolvedLines);
       eloBlock = formatEloBlock(eloCtx, eloMeta);
     } catch (e) {
@@ -184,26 +138,16 @@ export default async function handler(req, res) {
       gameId: gameId || null,
       bookLinesUsed: resolvedLines || null,
       linesSource: oddsMeta?.source || null,
-      oddsMeta,
-      elo: eloCtx,
-      eloMeta,
+      oddsMeta, elo: eloCtx, eloMeta,
       season: "2026-27",
       statsSource: realStats.source,
       statsWarning: realStats.warning || null,
     };
 
-    const prompt = buildPrompt(home, away, {
-      bookLines: resolvedLines || null,
-      realStats,
-      eloBlock,
-    });
-
+    const prompt = buildPrompt(home, away, { bookLines: resolvedLines, realStats, eloBlock });
     const groqRes = await fetch(GROQ_URL, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${groqKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [
@@ -214,12 +158,10 @@ export default async function handler(req, res) {
         max_tokens: 2200,
       }),
     });
-
     if (!groqRes.ok) {
       const errText = await groqRes.text();
       return res.status(502).json({ error: "Error de Groq", details: errText.slice(0, 400) });
     }
-
     const groqData = await groqRes.json();
     const raw = groqData.choices?.[0]?.message?.content || "";
     let analysis;
@@ -229,12 +171,10 @@ export default async function handler(req, res) {
     } catch {
       return res.status(502).json({ error: "No se pudo parsear la IA", raw: raw.slice(0, 500) });
     }
-
     if (realStats && typeof realStats === "object") {
       realStats.elo = eloCtx;
       realStats.eloMeta = eloMeta;
     }
-
     return res.status(200).json({ analysis, realStats, gameContext, teams: { home, away } });
   } catch (err) {
     console.error("analyze error:", err);
