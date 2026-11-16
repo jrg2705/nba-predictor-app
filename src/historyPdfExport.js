@@ -1,4 +1,4 @@
-// src/historyPdfExport.js — PDF estilo borrador de cuaderno (solo export, no toca el análisis)
+// src/historyPdfExport.js — PDF estilo borrador (solo export)
 
 const ABBR = {
   "Atlanta Hawks": "ATL",
@@ -73,11 +73,6 @@ function edgeColor(v) {
   return "#333";
 }
 
-function marketKey(m) {
-  if (!m) return "";
-  return String(m).toUpperCase().replace(/\s/g, "");
-}
-
 export function rowFromEntry(entry) {
   const a = entry.analysis || {};
   const away = entry.away || "";
@@ -87,13 +82,23 @@ export function rowFromEntry(entry) {
 
   const best = a.best_method || {};
   const alt = a.alternative_method || {};
-  const bestM = marketKey(best.market);
-  const altM = marketKey(alt.market);
 
-  const mark = (keys) => {
-    const set = new Set(keys.map(marketKey));
-    return set.has(bestM) || set.has(altM) ? "X" : "";
-  };
+  // ML: mismo criterio que tarjeta MONEYLINE (mayor %)
+  const homePctN = Number(a.home_win_pct);
+  const awayPctN = Number(a.away_win_pct);
+  let mlTeam = "";
+  if (Number.isFinite(homePctN) || Number.isFinite(awayPctN)) {
+    const h = Number.isFinite(homePctN) ? homePctN : -1;
+    const av = Number.isFinite(awayPctN) ? awayPctN : -1;
+    mlTeam = h >= av ? home : away;
+  }
+
+  // 1ª mitad: mismo criterio que tarjeta 1ª MITAD
+  const fh = a.first_half || {};
+  let fhTeam = "";
+  if (fh.winner === "home") fhTeam = home;
+  else if (fh.winner === "away") fhTeam = away;
+  else if (fh.winner) fhTeam = String(fh.winner);
 
   const sp = a.spread || {};
   let spreadAway = "";
@@ -116,9 +121,6 @@ export function rowFromEntry(entry) {
   const totalLine = tot.line != null ? tot.line : "";
   const totalPick = tot.pick ? String(tot.pick).toUpperCase() : "";
 
-  const fh = a.first_half || {};
-  const fhMark = mark(["1H", "1ª", "1RA"]);
-
   const meto1 = best.pick_summary || (best.market ? String(best.market) : "—");
   const meto2 = alt.pick_summary || (alt.market ? String(alt.market) : "—");
 
@@ -135,14 +137,12 @@ export function rowFromEntry(entry) {
     home: abbr(home),
     awayPct,
     homePct,
-    mlMark: mark(["ML", "MONEYLINE"]),
+    mlTeamShort: mlTeam ? abbr(mlTeam) : "—",
     spreadAway,
     spreadHome,
-    spreadMark: mark(["SP", "SPREAD"]),
     totalLine,
     totalPick,
-    totalMark: mark(["OU", "TOTAL", "OVER", "UNDER"]),
-    fhMark: fh.winner ? fhMark || "X" : fhMark,
+    fhTeamShort: fhTeam ? abbr(fhTeam) : "—",
     meto1,
     meto2,
     edgeAway,
@@ -185,7 +185,7 @@ export function openHistoryPdf({ entries, from, to }) {
           <div class="team">${esc(r.away)} <span class="pct">${esc(r.awayPct)}${r.awayPct !== "—" ? "%" : ""}</span></div>
           <div class="team">${esc(r.home)} <span class="pct">${esc(r.homePct)}${r.homePct !== "—" ? "%" : ""}</span></div>
         </td>
-        <td class="c mark">${esc(r.mlMark)}</td>
+        <td class="c team-pick">${esc(r.mlTeamShort)}</td>
         <td class="c spread">
           <div>${esc(r.spreadAway)}</div>
           <div>${esc(r.spreadHome)}</div>
@@ -194,7 +194,7 @@ export function openHistoryPdf({ entries, from, to }) {
           <div>${esc(r.totalLine)}</div>
           <div class="pick">${esc(r.totalPick)}</div>
         </td>
-        <td class="c mark">${esc(r.fhMark)}</td>
+        <td class="c team-pick">${esc(r.fhTeamShort)}</td>
         <td class="meto">${esc(r.meto1)}</td>
         <td class="meto">${esc(r.meto2)}</td>
         <td class="elo">
@@ -239,7 +239,7 @@ export function openHistoryPdf({ entries, from, to }) {
     .equ { width: 14%; font-weight: 600; }
     .team { line-height: 1.35; }
     .pct { font-weight: 400; font-size: 10px; color: #333; }
-    .mark { width: 6%; font-size: 13px; font-weight: 700; }
+    .team-pick { width: 9%; font-size: 11px; font-weight: 700; line-height: 1.2; }
     .spread, .total { width: 10%; }
     .pick { font-size: 10px; }
     .meto { width: 14%; font-size: 10px; text-align: left; padding-left: 6px; }
