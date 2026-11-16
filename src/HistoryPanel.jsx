@@ -1,4 +1,4 @@
-// src/HistoryPanel.jsx — Historial con filtro por fecha + export CSV (Neon) · panel-v2
+// src/HistoryPanel.jsx — Historial + filtro fechas + CSV + PDF borrador
 import { useState, useEffect } from "react";
 import {
   MAX_HISTORY,
@@ -8,6 +8,7 @@ import {
   migrateLocalToNeon,
   historyExportUrl,
 } from "./historyStorage.js";
+import { openHistoryPdf } from "./historyPdfExport.js";
 
 export default function HistoryPanel({
   history,
@@ -88,6 +89,33 @@ export default function HistoryPanel({
     window.open(url, "_blank");
   };
 
+  const handleExportPdf = async () => {
+    setMsg("Generando PDF…");
+    try {
+      let entries = history || [];
+      const result = await fetchHistoryFromApi({
+        limit: 200,
+        from: from || null,
+        to: to || null,
+      });
+      if (result.ok && result.entries?.length) {
+        entries = result.entries;
+      }
+      if (!entries.length) {
+        setMsg("No hay partidos para exportar en este rango.");
+        return;
+      }
+      openHistoryPdf({
+        entries,
+        from: from || null,
+        to: to || null,
+      });
+      setMsg(`PDF: ${entries.length} partido(s). Usa «Imprimir / Guardar PDF» en la ventana.`);
+    } catch (e) {
+      setMsg(e.message || "Error al generar PDF");
+    }
+  };
+
   const handleClearLocal = () => {
     clearHistory();
     if (source === "local") setHistory([]);
@@ -140,6 +168,22 @@ export default function HistoryPanel({
             title="Requiere DATABASE_URL (Neon)"
           >
             📊 Export CSV
+          </button>
+          <button
+            onClick={handleExportPdf}
+            style={{
+              background: "#1E293B",
+              border: "1px solid #F97316",
+              color: "#F97316",
+              borderRadius: 6,
+              padding: "6px 12px",
+              fontSize: 11,
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+            title="PDF estilo borrador por rango de fechas"
+          >
+            📄 Export PDF
           </button>
           <button
             onClick={handleClearLocal}
