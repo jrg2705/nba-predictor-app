@@ -2,6 +2,8 @@
 // GET ?date=YYYY-MM-DD
 // GET ?date=YYYY-MM-DD&results=1  → finalizados con marcador/total/margen
 
+import { getSql, ensureResultsTable, upsertGameResults } from "../lib/db.js";
+
 const BDL_BASE = "https://api.balldontlie.io/nba/v1";
 
 function mapGame(g) {
@@ -92,14 +94,14 @@ export default async function handler(req, res) {
       return res.status(200).json({
         date,
         games: [],
-        warning: "Falta BALLDONTLIE_API_KEY. Añádela en Vercel → Settings → Environment Variables.",
+        warning:
+          "Falta BALLDONTLIE_API_KEY. Añádela en Vercel → Settings → Environment Variables.",
       });
     }
 
-    const response = await fetch(
-      `${BDL_BASE}/games?dates[]=${date}&per_page=100`,
-      { headers: { Authorization: apiKey } }
-    );
+    const response = await fetch(`${BDL_BASE}/games?dates[]=${date}&per_page=100`, {
+      headers: { Authorization: apiKey },
+    });
 
     if (!response.ok) {
       const text = await response.text();
@@ -141,6 +143,16 @@ export default async function handler(req, res) {
 
     finals.sort((a, b) => String(a.gameDate || "").localeCompare(String(b.gameDate || "")));
 
+    try {
+      const sql = getSql();
+      if (sql && finals.length) {
+        await ensureResultsTable(sql);
+        await upsertGameResults(sql, finals, date);
+      }
+    } catch (e) {
+      console.warn("neon results save:", e.message);
+    }
+
     return res.status(200).json({
       date,
       totalScheduled: rawGames.length,
@@ -148,13 +160,9 @@ export default async function handler(req, res) {
       totalPending: pending.length,
       games: finals,
       pending,
-      fetchedAt: new Date().toISOString(),
     });
   } catch (err) {
     console.error("today-games error:", err);
-    return res.status(500).json({
-      error: "Error al obtener partidos del día",
-      details: err.message,
-    });
+    return res.status(500).json({ error: "Error del servidor", details: err.message });
   }
 }
