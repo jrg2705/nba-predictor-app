@@ -1,4 +1,4 @@
-// api/history-export.js — Export CSV historial Neon
+// api/history-export.js — Export CSV historial Neon (+ Elo / edge)
 import { getSql, ensureHistoryTable } from "../lib/db.js";
 
 function csvEscape(v) {
@@ -6,6 +6,33 @@ function csvEscape(v) {
   const s = String(v);
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
+}
+
+/** Extrae bloque Elo guardado en game_context / real_stats / analysis */
+function extractElo(r, analysis) {
+  const gc = r.game_context || {};
+  const rs = r.real_stats || {};
+  const elo =
+    gc.elo ||
+    rs.elo ||
+    analysis.elo ||
+    gc.eloContext ||
+    null;
+
+  const eloHome =
+    elo?.eloHome ?? elo?.elo_home ?? gc.eloHome ?? null;
+  const eloAway =
+    elo?.eloAway ?? elo?.elo_away ?? gc.eloAway ?? null;
+  const edgeHome =
+    elo?.edgeHomePct ?? elo?.edge_home ?? elo?.edgeHome ?? null;
+  const edgeAway =
+    elo?.edgeAwayPct ?? elo?.edge_away ?? elo?.edgeAway ?? null;
+  const pHome =
+    elo?.pHome ?? elo?.p_home ?? elo?.winProbHome ?? null;
+  const pAway =
+    elo?.pAway ?? elo?.p_away ?? elo?.winProbAway ?? null;
+
+  return { eloHome, eloAway, edgeHome, edgeAway, pHome, pAway };
 }
 
 export default async function handler(req, res) {
@@ -60,13 +87,33 @@ export default async function handler(req, res) {
     }
 
     const headers = [
-      "id", "date", "home", "away", "game_id",
-      "home_win_pct", "away_win_pct",
-      "best_market", "best_pick", "best_confidence",
-      "alt_market", "alt_pick", "alt_confidence",
-      "spread_favored", "spread_line", "spread_covers",
-      "total_pick", "total_line", "first_half_winner",
-      "analyst_take", "verified",
+      "id",
+      "date",
+      "home",
+      "away",
+      "game_id",
+      "home_win_pct",
+      "away_win_pct",
+      "best_market",
+      "best_pick",
+      "best_confidence",
+      "alt_market",
+      "alt_pick",
+      "alt_confidence",
+      "spread_favored",
+      "spread_line",
+      "spread_covers",
+      "total_pick",
+      "total_line",
+      "first_half_winner",
+      "elo_home",
+      "elo_away",
+      "elo_edge_home_pct",
+      "elo_edge_away_pct",
+      "elo_win_prob_home",
+      "elo_win_prob_away",
+      "analyst_take",
+      "verified",
     ];
 
     const lines = [headers.join(",")];
@@ -77,16 +124,40 @@ export default async function handler(req, res) {
       const spread = a.spread || {};
       const total = a.total || {};
       const fh = a.first_half || {};
+      const elo = extractElo(r, a);
+
       lines.push(
         [
-          r.id, r.analyzed_at, r.home, r.away, r.game_id,
-          a.home_win_pct, a.away_win_pct,
-          best.market, best.pick_summary, best.confidence_pct,
-          alt.market, alt.pick_summary, alt.confidence_pct,
-          spread.favored, spread.line, spread.covers,
-          total.pick, total.line, fh.winner,
-          a.analyst_take, r.verified,
-        ].map(csvEscape).join(",")
+          r.id,
+          r.analyzed_at,
+          r.home,
+          r.away,
+          r.game_id,
+          a.home_win_pct,
+          a.away_win_pct,
+          best.market,
+          best.pick_summary,
+          best.confidence_pct,
+          alt.market,
+          alt.pick_summary,
+          alt.confidence_pct,
+          spread.favored,
+          spread.line,
+          spread.covers,
+          total.pick,
+          total.line,
+          fh.winner,
+          elo.eloHome,
+          elo.eloAway,
+          elo.edgeHome,
+          elo.edgeAway,
+          elo.pHome,
+          elo.pAway,
+          a.analyst_take,
+          r.verified,
+        ]
+          .map(csvEscape)
+          .join(",")
       );
     }
 
